@@ -1,0 +1,566 @@
+---
+title: "Brief Capstone Machine Learning"
+author: "Team Algoritma"
+date: "`r Sys.Date()`"
+output: 
+ html_document:
+   toc: true
+   toc_float: true
+   highlight: zenburn
+   df_print: paged
+   theme: flatly
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Import Library
+```{r}
+options(scipen = 999)
+library(tidyverse)
+library(FactoMineR)
+library(MLmetrics)
+library(caret)
+library(dbplyr)
+library(tidymodels)
+library(ranger)
+library(ggplot2)
+library(randomForest)
+library(parsnip)
+```
+# Case
+
+Case yang dipilih adalah: Concrete Prediction
+
+# Import Data
+
+```{r}
+train <- read.csv("data/data-train.csv",header=T, stringsAsFactors=T)
+train
+```
+## Data Preprocess
+
+
+```{r}
+library(dplyr)
+train<- train %>% 
+  select(-1)
+```
+
+
+```{r}
+str(train)
+```
+
+```{r}
+summary(train)
+```
+
+```{r}
+anyNA(train)
+
+colSums(is.na(train))
+```
+#Mengecek apakah ada outlier atau tidak
+
+```{r}
+boxplot(train$strength)
+```
+
+```{r}
+boxplot(train$cement)
+```
+
+```{r}
+boxplot(train$slag)
+```
+
+```{r}
+boxplot(train$flyash)
+```
+
+```{r}
+boxplot(train$water)
+```
+
+```{r}
+boxplot(train$super_plast)
+```
+
+```{r}
+boxplot(train$coarse_agg)
+```
+
+```{r}
+boxplot(train $fine_agg)
+```
+
+```{r}
+boxplot(train$age)
+```
+Berdasarkan boxplot diatas kita dapat menemukan outlier pada beberapa kolom seperti slag, super_plast, fine_agg, age, strength. Kita dapat memperlakukan kolom, baik dengan menghapus atau memasukkan. Namun khusus untuk kolom super_plast dan age, kita harus membiarkan datanya apa adanya.Hal ini dimaksudkan untuk dapat memprediksi kondisi yang sama di dataset baru kami.
+
+
+```{r}
+slag <- which(train$slag %in% boxplot(train$slag, plot=FALSE)$out) #2 obs
+water <- which(train$water %in% boxplot(train$water, plot=FALSE)$out) #9 obs
+# which(data$fine_agg %in% boxplot(data$fine_agg, plot=FALSE)$out) #27 obs
+fine_agg <- which(train$fine_agg %in% boxplot(train$fine_agg, plot=FALSE)$out)[23:27] #5
+strength <- which(train$strength %in% boxplot(train$strength, plot=FALSE)$out) #5 obs
+```
+
+
+Hal berikutnya yang harus kita lakukan adalah menghapus outlier dari slag, water, fine_agg (hanya outlier teratas karena 594 sebagai fine_agg terdeteksi sebagai outlier di sini tetapi kami menemukan nilai yang sama dalam data pengiriman kami juga) dan juga kolom kekuatan (dan total hanya 2,55% dari total pengamatan dataset kami).
+## Menghapus Outlier
+
+```{r}
+train <- train[-c(slag,water,fine_agg,strength),]
+nrow(train)
+```
+
+
+#Scalling data : Scalling data diperlukan
+
+```{r}
+
+train_scale <- scale(train)
+```
+# Explore the relation between the target and the features
+
+```{r}
+GGally::ggcorr(train, label = T)
+```
+
+```{r}
+GGally::ggpairs(train)
+```
+
+
+```{r}
+# buat model
+model_age <- lm(formula = strength~age, data = train)
+
+# summary model
+summary(model_age)
+```
+Cek korelasi
+
+```{r}
+plot(train$age, train$strength)
+abline(model_age, col = "red")
+```
+#Is strength and cement has strong correlation?
+
+```{r}
+# buat model
+model_cement <- lm(formula = strength~cement, data = train)
+
+# summary model
+summary(model_cement)
+```
+
+```{r}
+plot(train$cement, train$strength)
+abline(model_cement, col = "blue")
+```
+# Is super_plast has a linear correlation with the strength?
+
+```{r}
+# buat model
+model_plast <- lm(formula = strength~super_plast, data = train)
+
+# summary model
+summary(model_plast)
+```
+
+```{r}
+plot(train$cement, train$is_plast)
+abline(model_plast, col = "blue")
+```
+
+1. Is strength positively correlated with age? The correlation value between strength and age is 0.347. 
+2. Is strength and cement has strong correlation? The correlation value between strength and cement is 0.49. 
+3. Is super_plast has a linear correlation with the strength?  Correlation values can be seen in the chart above that is 0.35
+
+
+##Model Fitting and Evaluation
+
+#Demonstrate how to prepare cross-validation data for this case.
+What is the proportion of the training vs testing dataset?
+data Wraggling
+
+##Data Preprocessing
+Tidak ada kolom dengan variasi mendekati nil
+
+```{r}
+library(caret)
+no_Var <- nearZeroVar(train)
+no_Var
+```
+##Cross Validation
+```{r}
+library (rsample) 
+set.seed(100)
+
+index <- initial_split(data = train, prop = 0.85, strata = "strength")
+data_train <- training(index)
+data_test <- testing(index)
+```
+What is the proportion of the training vs testing dataset?
+
+```{r}
+prop.table(table(data_train$strength))
+```
+Inisght : Cukup Balance
+
+
+#Demonstrate how to properly do model fitting and evaluation.
+What model do you use?
+**Linear Regression**
+
+
+```{r}
+LR <- lm(formula = strength~cement+slag+flyash+water+super_plast+age, data = data_train)
+```
+
+```{r}
+summary(LR)$r.squared
+```
+Prediction
+
+```{r}
+LR.prediction1 <- predict(object = LR, newdata = data_train)
+LR.prediction2 <- predict(object = LR, newdata = data_test)
+```
+Evaluate
+```{r}
+MAE(pred = LR.prediction1, obs =  data_train$strength)
+```
+```{r}
+MAE(pred = LR.prediction2, obs =  data_test$strength)
+```
+Berdasarkan model diatas, R-squared= 0.6159344 dan MAE sebesar 8.161773. Dapat disimpulkan bahwa Linear Regression tidak cukup performanya untuk data ini.
+
+**Random Forest**
+
+```{r}
+#set.seed(1002)
+
+#ctrl <- trainControl(method="repeatedcv", # k fold
+                    # number = 6, # k
+                    # repeats = 5) # 5 kali k-fold
+
+#concreate_forest <- train(strength ~ ., 
+                   #data = data_train, 
+                   #method = "rf", 
+                   #trControl = ctrl) 
+
+#saveRDS(concreate_forest, "concreate_forest4.RDS") # simpan model
+```
+Print hasil model
+
+```{r}
+concreate_forest <-readRDS("concreate_forest4.RDS")
+```
+
+```{r}
+concreate_forest
+```
+Print Final Model
+
+```{r}
+library(randomForest)
+concreate_forest$finalModel
+```
+
+
+
+How do you evaluate the model?
+
+Prediction
+
+```{r}
+concreate_pred1 <- predict(concreate_forest, newdata=data_train)
+concreate_pred2 <- predict(concreate_forest, newdata=data_test)
+head(concreate_pred2)
+```
+Evaluate
+
+```{r}
+MAE(concreate_pred1, data_train$strength)
+```
+
+
+```{r}
+MAE(concreate_pred2, data_test$strength)
+```
+Untuk mendapatkan R-squared dapat mengguankan perhitungan berikut
+
+```{r}
+actual <- data_test$strength
+predicted <- concreate_pred2
+
+R2test <- 1 - (sum((actual-predicted)^2)/sum((actual-mean(actual))^2))
+R2test
+```
+Data Preposesing untuk Tidymodels menggunakan Recipe
+
+```{r}
+library(dbplyr)
+library(tidymodels)
+data_recipe <- recipe(strength~., data_train) %>% 
+  step_corr(all_predictors()) %>% 
+  step_sqrt(all_numeric()) %>% 
+  step_center(all_numeric()) %>% 
+  step_scale(all_numeric()) %>% 
+  prep()
+
+data_train_tidy <- juice(data_recipe)
+data_test_tidy <- bake(data_recipe, data_test)
+```
+
+
+
+##Tidymodels untuk Random Forest
+Model Fitting
+```{r}
+model_tidy <- rand_forest(
+  mode = "regression",
+  mtry = 5,
+  trees = 650,
+  min_n = 1
+)
+
+model_tidy
+```
+```{r}
+# set-up model engine
+model_engine_tidy1 <- set_engine(
+  object = model_tidy,
+  engine = "randomForest"
+)
+
+model_engine_tidy1
+```
+Fitting Model
+
+```{r}
+Tidy_Forest1 <- fit(
+  object = model_engine_tidy1,
+  formula = strength ~ .,
+  data = data_train_tidy
+)
+
+Tidy_Forest1 
+```
+```{r}
+# fit the model
+Tidy_Forest1 <- fit_xy(
+  object = model_engine_tidy1,
+  x = select(data_train_tidy, -strength),
+  y = select(data_train_tidy, strength)
+)
+Tidy_Forest1 
+```
+**Prediction**
+```{r}
+library(tidymodels)
+scaled_prediction <- data_test_tidy %>% 
+  select(strength) %>%
+  bind_cols((predict(Tidy_Forest1, data_test_tidy)))
+
+# quick check
+scaled_prediction
+```
+**Evaluasi**
+Back Transform
+```{r}
+recipe_bt <- function(x, data_recipe){
+ means <- data_recipe$steps[[3]]$means[["strength"]]
+ sds <- data_recipe$steps[[4]]$sds[["strength"]]
+   x <- (x*sds+means)^2
+ }
+```
+
+```{r}
+revert_prediction1 <- apply(scaled_prediction, MARGIN = 2, FUN =  recipe_bt, data_recipe = data_recipe) %>% 
+  as.data.frame()
+head(revert_prediction1)
+```
+**Evaluasi Metrics*
+```{r}
+class(revert_prediction1)
+```
+```{r}
+revert_prediction1 %>% 
+  summarise(
+    R_SQUARED = rsq_vec(strength, .pred),
+    RMSE = rmse_vec(strength, .pred),
+    MAE = mae_vec(strength, .pred),
+    MAPE = mape_vec(strength, .pred),
+    MASE = mase_vec(strength, .pred)
+  )
+```
+```{r}
+revert_prediction1 %>% metrics(truth = strength, estimate = .pred)
+```
+
+is your model overfit? tidak overfit
+
+#Compare multiple data preprocess approach.
+
+Normalize the data
+
+```{r}
+normalize <- function(x){
+  return ( 
+    (x - min(x))/(max(x) - min(x)) 
+           )
+}
+```
+
+
+```{r}
+normalize(train)
+```
+**Data Preprocess untuk setiap model berbeda-beda karena model dan library yang digunakan berbeda.**
+
+Do you need to log-transform or scale the variables with square root?
+```{r}
+sqrt(nrow(data_train))
+```
+
+
+#Compare multiple model.
+Pada project ini tunning dilakukan dengan 2 model yaitu Linear Regression dan Random forest untuk meningkatkan kinerja model
+
+1. Linear Regression
+
+```{r}
+LR_Rsquared <- round(summary(LR)$r.squared*100,2)
+LR_MAE <- round(MAE(pred = LR.prediction2, obs =  data_test$strength),2)
+LR_Model <- cbind(Model = "Linear Regression", `R-squared`=LR_Rsquared,MAE=LR_MAE ) %>% 
+  as.data.frame()
+LR_Model
+```
+Random Forest
+
+```{r}
+RF10_Rsquared <- round(R2test*100,2)
+RF10_MAE <- round(MAE(concreate_pred2, data_test$strength),2)
+RF10_Model <- cbind(Model = "Random Forest (10r10n)", `R-squared`=RF10_Rsquared,MAE=RF10_MAE ) %>% 
+  as.data.frame()
+RF10_Model
+```
+Random Forest menggunakan tidymodels
+
+```{r}
+Tidyrf1 <- revert_prediction1 %>% 
+  summarise(
+    R_SQUARED = rsq_vec(strength, .pred),
+    MAE = mae_vec(strength, .pred)
+  )
+```
+
+```{r}
+Tidy_Forest1_Rsquared <- round(Tidy_Forest1$R_SQUARED*100,2)
+TidyRF1_MAE <-Tidy_Forest1$MAE
+TidyRF1_Model <- cbind(Model = "Tidymodels Random Forest", `R-squared`=Tidy_Forest1_Rsquared,MAE=TidyRF1_MAE ) %>% 
+  as.data.frame()
+TidyRF1_Model
+```
+
+
+###Predict Submission data
+
+```{r}
+submission <- read.csv("data/data-test.csv")
+glimpse(submission)
+```
+
+```{r}
+submission$strength <- c(1:205) #replacing NA to random value
+data_sub <- bake(data_recipe, submission)
+head(data_sub)
+```
+
+
+```{r}
+# predict target using your model
+
+pred_test <- predict(Tidy_Forest1,data_sub)
+
+# Create submission data
+recipe_bt <- function(x, data_recipe){
+ means <- data_recipe$steps[[3]]$means[["strength"]]
+ sds <- data_recipe$steps[[4]]$sds[["strength"]]
+   x <- (x*sds+means)^2
+}
+revert_sub <- apply(pred_test, MARGIN = 2, FUN =  recipe_bt, data_recipe = data_recipe) %>% 
+  as.data.frame()
+
+
+submission.new <- submission %>% 
+  select(id) %>% 
+  cbind(revert_sub)
+
+names(submission.new)[2]<-"strength"
+
+# save data
+write.csv(submission.new, "submission-sitinurula.csv", row.names = F)
+
+```
+
+(2 Points) Use LIME method to interpret the model that you have used.
+Do you need to scale back the data into original value in order to be more interpretable?**iya butuh**
+How many features do you use to explain the model? **10 feature**
+What is the difference between using LIME compared to interpretable machine learning models such as Decision Tree or metrics such as Variable Importance in Random Forest? **Jika mengguankan Random Forest memang untuk running datanya lumayan lama tapi kelebihananya mendapatkan MAE yang cukup tinggi***
+
+```{r}
+
+importance(Tidy_Forest1$fit) %>% 
+as.data.frame() %>% 
+  arrange(-IncNodePurity) %>% 
+  rownames_to_column("variable") %>% 
+  head(10) %>% 
+  ggplot(aes(IncNodePurity, 
+             reorder(variable, IncNodePurity))
+         ) +
+  geom_col(fill = "firebrick") +
+  labs(x = "Importance",
+       y = NULL,
+       title = "Random Forest Variable Importance")
+
+  
+```
+Dari grafik diatas dapat disimpulkan bahwa Age merupakan variabel yang paling penting
+
+
+(2 Points) Interpret the first 4 observations of the plot.
+
+```{r}
+library(lime)
+class(Tidy_Forest1)
+
+```
+```{r}
+set.seed(123)
+explainer <- lime(x =data_train_tidy %>% select(-strength), 
+                  model =Tidy_Forest1)
+explanation <- explain(x = data_test %>% select(-strength) %>% slice(1:4), 
+                       feature_select = "auto",
+                       explainer = explainer, 
+                       n_features = 10)
+plot_features(explanation)
+```
+
+
+What is the difference between interpreting black box model with LIME and using an interpretable machine learning model?
+**Model black box lebih kompleks**
+How good is the explanation fit? What does it signify?**Elemen selanjutnya adalah Explanation Fit. Nilai-nilai ini menunjukkan seberapa baik LIME menjelaskan model, seperti nilai R-Squared dari regresi linier. Disini kita melihat Explanation Fit hanya memiliki nilai sekitar 0.50-0.7 (50%-70%), yang dapat diartikan bahwa LIME hanya dapat menjelaskan sedikit tentang model kita. Anda mungkin mempertimbangkan untuk tidak mempercayai output LIME karena hanya memiliki Explanation Fit yang rendah.**
+What are the most and the least important factors for each observation? **Age**
+
+##CONCLUSION
+Berdasarkan hasil Submission yang memenuhi kriteria MAE kurang dari 4 dan Rsquare lebih dari 90 yaitu Random Forest menggunakan TidyModels.Pada saat menggunakan tidymodels running data tidak membutuhkan waktu yang lama.Problem Conrete Prediction dapat diselesaikann menggunakan machine learning terutama random forest.
+Capston Project ini dapat diimplementasikan bisnis untuk memprediksi apa yang menyebabkan concrete dapat bertahan lama mengunakan bahan yang seperti apa sehingga dapat menghemat biaya.
+
